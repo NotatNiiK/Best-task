@@ -5,7 +5,7 @@
             <h2 class="order-form__title">Menu</h2>
             <div class="order-form__swiper swiper">
               <swiper
-                :slides-per-view="1"
+                :slides-per-view="1.1"
                 :space-between="50"
               >
                 <swiper-slide v-for="pizza in pizzaMenu" :key="pizza.id">
@@ -43,13 +43,7 @@
                         </li>
                     </ul>
                   </div>
-                  <div class="pizza-select__numbers">
-                    <button class="pizza-select__numbers-button" @click="increasePizzaNumber" :disabled="numberOfPizza === 10">+</button>
-                    <input type="number" class="pizza-select__numbers-input" max="10" min='1' v-model="numberOfPizza">
-                    <button class="pizza-select__numbers-button" @click="decreasePizzaNumber" :disabled="numberOfPizza === 1">-</button>
-                  </div>
                 </div>
-                <button class="form__add-btn" @click="addPizza">Add</button>
                 <div class="pizza-select__size">
                     <button 
                       class="pizza-select__size-btn" 
@@ -121,15 +115,33 @@
               <button class="form__order-btn" @click="orderPizza">Order</button>
             </form>
         </div>
-        <div class="order-form__message-block" v-if="addedPizza.length > 0">
-          <div class="order-form__message-body">
-            <div class="order-form__message-menu"></div>
-              <div class="order-form__message-button">
-                <img src="@/assets/img/message.png" alt="Message">
+        </div>
+        <transition>
+          <div class="poppup" v-if="isPoppupOpen" >
+            <div class="poppup__body" @click="isPoppupOpen = false">
+              <div class="poppup__content" @click.stop>
+                <h2 class="poppup__title">Your order</h2>
+                <div class="poppup__order" v-if="!orderMade">
+                  <div class="poppup__pizza-name">Pizza: <strong>{{ finalOrder.pizzaName}}</strong></div>
+                  <div class="poppup__name">Your name: <strong>{{finalOrder.name}}</strong></div>
+                  <div class="poppup__size">Size: <strong>{{ finalOrder.pizzaSize }}cm</strong></div>
+                  <ul class="poppup__toppings">
+                    <summary>Toppings:</summary>
+                    <li>Corn: <strong>x{{ addedToppings.corn }}</strong></li>
+                    <li>Sausage: <strong>x{{ addedToppings.sausage }}</strong></li>
+                    <li>Mushrooms: <strong>x{{ addedToppings.mushrooms }}</strong></li>
+                    <li>Pineapple: <strong>x{{ addedToppings.pineapple }}</strong></li>
+                  </ul>
+                  <div class="poppup__price">{{ finalOrder.pizzaPrice }}$</div>
+                  <button class="poppup__button" @click="confirmOrder">Confirm</button>
+                </div>
+                <div class="poppup__seccsesful" v-else>
+                  The order has been successfully placed
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </transition>
     </div>
 </template>
 
@@ -154,7 +166,6 @@ export default {
         return {
             currentPizza: null,
             pizzaName: '',
-            numberOfPizza: 1,
             isTipsVisible: false,
             pizzaSize: 30,
             toppings: [
@@ -176,19 +187,11 @@ export default {
               mushrooms: 0,
               pineapple: 0
             },
-            addedPizza: [],
-            finalOrder: {}
+            finalPizzaPrice: null,
+            finalOrder: {},
+            isPoppupOpen: false,
+            orderMade: false,
         }
-    },
-    watch:{
-      numberOfPizza(newValue){
-        if(newValue > 10){
-          this.numberOfPizza = 10;
-        }
-        if(newValue < 1){
-          this.numberOfPizza = 1;
-        }
-      }
     },
     methods: {
         choosePizzaFromTips(value){
@@ -204,12 +207,6 @@ export default {
           this.isPizzaNameNotCorrect = false;
           this.isTipsVisible = true;
         },
-        increasePizzaNumber(){
-            this.numberOfPizza++;
-        },
-        decreasePizzaNumber(){
-            this.numberOfPizza--;
-        },
         choosePizzaSize(value){
           this.pizzaSize = value;
         },
@@ -223,21 +220,6 @@ export default {
           if(this.pizzaSize === 70){
             return parseFloat(price) + 15 + '$';
           }
-        },
-        addPizza(){
-          const pizza = this.pizzaMenu.find(item => item.name == this.pizzaName);
-          if(!pizza){
-            this.isPizzaNameNotCorrect = true;
-            return
-          }
-          const addedPizzaInfo = {
-            name: pizza.name,
-            numbers: this.numberOfPizza,
-            size: this.pizzaSize
-          }
-          this.addedPizza.unshift(addedPizzaInfo);
-          this.pizzaName = '';
-          this.numberOfPizza = '';
         },
         addTopping(topping){
           if(topping.name === 'Corn'){
@@ -258,8 +240,21 @@ export default {
           }
         },
         removeTopping(topping){
-          if(topping.numbers > 0){
-            topping.numbers--
+          if(topping.name === 'Corn'){
+            topping.numbers--;
+            this.addedToppings.corn--;
+          }
+          if(topping.name === 'Sausage'){
+            topping.numbers--;
+            this.addedToppings.sausage--;
+          }
+          if(topping.name === 'Mushrooms'){
+            topping.numbers--;
+            this.addedToppings.mushrooms--;
+          }
+          if(topping.name === 'Pineapple'){
+            topping.numbers--;
+            this.addedToppings.pineapple--;
           }
         },
         orderPizza(){
@@ -268,14 +263,19 @@ export default {
           const correctTel = telRegex.test(this.tel);
           const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
           const correctEmail = emailRegex.test(this.email);
-          if(correctName && correctTel && correctEmail && this.addedPizza.length > 0){
+          const pizzaNameCorrect = this.pizzaMenu.map(item => item.name).includes(this.pizzaName);
+          if(correctName && correctTel && correctEmail && pizzaNameCorrect){
+            this.calcFinalPrice();
             const order = {
+              pizzaName: this.pizzaName,
               name: this.name,
               tel: this.tel,
               email: this.email,
               pizzaSize: this.pizzaSize,
+              pizzaPrice: this.finalPizzaPrice
             }
             this.finalOrder = order;
+            this.isPoppupOpen = true;
           }
           if(!correctName){
             this.isNameNotCorrect = true;
@@ -286,10 +286,58 @@ export default {
           if(!correctEmail){
             this.isEmailNotCorrect = true;
           }
-          /* if(!this.addedPizza.length === 0){
+          if(!this.pizzaName){
             this.isPizzaNameNotCorrect = true;
-          } */
-        }
+          }
+        },
+        calcFinalPrice(){
+          const localPizzaPrice = parseFloat(this.pizzaMenu.find(pizza => pizza.name === this.pizzaName)?.price);
+          if(localPizzaPrice){
+            if(this.pizzaSize === 30){
+              this.finalPizzaPrice = localPizzaPrice + this.addToppingPrice();
+            }
+            if(this.pizzaSize === 50){
+              this.finalPizzaPrice = parseFloat(localPizzaPrice) + 5 + this.addToppingPrice();
+            }
+            if(this.pizzaSize === 70){
+              this.finalPizzaPrice = parseFloat(localPizzaPrice) + 15 + this.addToppingPrice();
+            }
+          }
+          else{
+            this.isPizzaNameNotCorrect = true;
+          }
+        },
+        addToppingPrice(){
+          let generalToppingPrice = 0; 
+          if(this.addedToppings.corn > 0){
+            generalToppingPrice += this.addedToppings.corn * 2;
+          }
+          if(this.addedToppings.sausage > 0){
+            generalToppingPrice += this.addedToppings.sausage * 3;
+          }
+          if(this.addedToppings.mushrooms > 0){
+            generalToppingPrice += this.addedToppings.mushrooms * 1;
+          }
+          if(this.addedToppings.pineapple > 0){
+            generalToppingPrice += this.addedToppings.pineapple * 4;
+          }
+          return generalToppingPrice;
+        },
+        confirmOrder(){
+            this.orderMade = true;
+            this.pizzaName = '';
+            this.pizzaSize = 30;
+            this.name = '';
+            this.tel = '';
+            this.email = '';
+            this.toppings = this.toppings.map(item => {
+              item.numbers = 0;
+              return item;
+            })
+            setTimeout(() => {
+              this.isPoppupOpen = false
+            }, 5000)
+        },
     },
     computed:{
         filteredPizzaMenu(){
@@ -354,6 +402,11 @@ export default {
   &__slide{
     display: flex;
     margin-bottom: 30px;
+    @media all and (max-width: 768px) {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
   }
   &__desc{
     padding-left: 40px;
@@ -361,10 +414,20 @@ export default {
   &__name{
     font-size: 3.5rem;
     font-weight: 700;
+    @media all and (max-width: 768px) {
+      font-size: 2.5rem;
+    }
   }
   &__image{
     width: 300px;
     height: 300px;
+    @media all and (max-width: 768px) {
+      margin-bottom: 20px;
+    }
+    @media all and (max-width: 478px) {
+      width: 200px;
+      height: 200px;
+    }
     img{
       max-width: 100%;
     }
@@ -476,16 +539,18 @@ export default {
   &__tips{
     position: absolute;
     left: 0;
-    bottom: -105%;
+    top: 105%;
     width: 100%;
     display: flex;
     align-items: center;
-    padding: 10px;
+    flex-wrap: wrap;
+    padding: 10px 10px 0;
     background: #fff;
     color: #000;
   }
   &__tip{
     margin-right: 15px;
+    margin-bottom: 10px;
     &:last-child{
       margin-right: 0;
     }
@@ -527,6 +592,12 @@ export default {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    column-gap: 20px;
+    row-gap: 20px;
+    @media all and (max-width: 478px) {
+      flex-direction: column;
+    }
   }
 }
 
@@ -576,4 +647,111 @@ export default {
   }
 }
 
+.poppup {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    height: 100%;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.819);
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    &__body {
+      min-height: 100vh;
+      width: 100%;
+      padding: 30px 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    &__content {
+      color: #000;
+      background: #fff;
+      width: 500px;
+      height: 500px;
+      padding: 30px;
+      border-radius: 10px;
+      @media all and (max-width: 768px) {
+        width: 80%;
+      }
+    }
+    &__title{
+      line-height: 120%;
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 600;
+      color: rgb(255, 128, 0);
+      margin-bottom: 30px;
+    }
+    &__toppings{
+      padding: 10px 0;
+      summary{
+        font-size: 1rem;
+        margin-bottom: 10px;
+      }
+      li{
+        position: relative;
+        padding-left: 10px;
+        margin-bottom: 10px;
+        &::before{
+          position: absolute;
+          left: 0;
+          top: 6px;
+          content: '';
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #000;
+        }
+      }
+    }
+    &__pizza-name,
+    &__name,
+    &__size {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+    &__price{
+      color: rgb(255, 128, 0);
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 120%;
+      margin-bottom: 20px;
+    }
+    &__button{
+      width: 100%;
+      padding: 15px;
+      border-radius: 10px;
+      color: #fff;
+      background: rgb(14, 165, 92);
+      transition: all .4s ease 0s;
+      &:hover{
+        background: rgb(14, 98, 57);
+      }
+    }
+    &__seccsesful{
+      text-align: center;
+      max-width: 350px;
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.7rem;
+      font-weight: 700;
+    }
+}
+.v-enter-active,
+.v-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.v-enter-from,
+.v-leave-to {
+  opacity: 0;
+  transform: translateY(-50px);
+}
 </style>
